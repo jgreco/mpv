@@ -76,6 +76,15 @@ static const char * const builtin_lua_scripts[][2] = {
     {0}
 };
 
+struct user_builtin {
+    const char *name;
+    const char *filename;
+};
+
+struct user_builtin **user_builtins = NULL;
+int num_user_builtins = 0;
+
+
 // Represents a loaded script. Each has its own Lua state.
 struct script_ctx {
     const char *name;
@@ -219,6 +228,22 @@ static int load_builtin(lua_State *L)
     return 0;
 }
 
+static int load_user_builtin(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    for (int n = 0; n < num_user_builtins; n++) {
+        if (strcmp(name, user_builtins[n]->name) == 0) {
+            const char *fname = user_builtins[n]->filename;
+            if (luaL_loadfile(L, fname))
+                lua_error(L);
+            lua_call(L, 0, 1);
+            return 1;
+        }
+    }
+    luaL_error(L, "user builtin module '%s' not found\n", name);
+    return 0;
+}
+
 // Execute "require " .. name
 static void require(lua_State *L, const char *name)
 {
@@ -341,6 +366,11 @@ static int run_lua(lua_State *L)
         lua_pushcfunction(L, load_builtin); // package preload load_builtin
         lua_setfield(L, -2, builtin_lua_scripts[n][0]);
     }
+    for (int n = 0; n < num_user_builtins; n++) {
+        lua_pushcfunction(L, load_user_builtin);
+        lua_setfield(L, -2, user_builtins[n]->name);
+    }
+
     lua_pop(L, 2); // -
 
     assert(lua_gettop(L) == 0);
@@ -355,6 +385,20 @@ static int run_lua(lua_State *L)
         const char *e = lua_tostring(L, -1);
         MP_FATAL(ctx, "Lua error: %s\n", e ? e : "(unknown)");
     }
+
+    return 0;
+}
+
+static int add_user_builtin(struct MPContext *mpctx, const char *name, const char *filename)
+{
+    if (!user_builtins)
+        user_builtins = talloc_array_ptrtype(NULL, user_builtins, 1);
+
+    struct user_builtin *ubs = talloc(user_builtins, struct user_builtin);
+    ubs->name = talloc_strdup(user_builtins, name);
+    ubs->filename = talloc_strdup(user_builtins, filename);
+
+    MP_TARRAY_APPEND(NULL, user_builtins, num_user_builtins, ubs);
 
     return 0;
 }
@@ -1411,4 +1455,5 @@ const struct mp_scripting mp_scripting_lua = {
     .name = "lua script",
     .file_ext = "lua",
     .load = load_lua,
+    .add_user_builtin = add_user_builtin,
 };

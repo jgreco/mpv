@@ -210,6 +210,49 @@ void mp_load_builtin_scripts(struct MPContext *mpctx)
     load_builtin_script(mpctx, mpctx->opts->lua_load_stats, "@stats.lua");
 }
 
+static void mp_prepare_user_builtin(struct MPContext *mpctx, const char *fname)
+{
+    void *tmp = talloc_new(NULL);
+    char *ext = mp_splitext(fname, NULL);
+    char *name = script_name_from_filename(tmp, fname);
+    const struct mp_scripting *backend = NULL;
+    for (int n = 0; scripting_backends[n]; n++) {
+        const struct mp_scripting *b = scripting_backends[n];
+        if (ext && strcasecmp(ext, b->file_ext) == 0) {
+            backend = b;
+            break;
+        }
+    }
+
+    if (!backend) {
+        MP_VERBOSE(mpctx, "Can't load unknown script: %s\n", fname);
+        talloc_free(tmp);
+        return;
+    }
+
+    if (!backend->add_user_builtin) {
+        MP_VERBOSE(mpctx, "Can't preload %s user builtin: %s\n",backend->name, fname);
+        talloc_free(tmp);
+        return;
+    }
+
+    backend->add_user_builtin(mpctx, name, fname);
+    talloc_free(tmp);
+}
+
+void mp_prepare_user_builtins(struct MPContext *mpctx)
+{
+    void *tmp = talloc_new(NULL);
+    char **builtinsdir = mp_find_all_config_files(tmp, mpctx->global, "user-builtins");
+    for (int i = 0; builtinsdir && builtinsdir[i]; i++) {
+        char **files = list_script_files(tmp, builtinsdir[i]);
+        for (int n = 0; files && files[n]; n++) {
+            mp_prepare_user_builtin(mpctx, files[n]);
+        }
+    }
+    talloc_free(tmp);
+}
+
 void mp_load_scripts(struct MPContext *mpctx)
 {
     // Load scripts from options
@@ -262,6 +305,7 @@ const struct mp_scripting mp_scripting_cplugin = {
     .name = "SO plugin",
     .file_ext = "so",
     .load = load_cplugin,
+    .add_user_builtin = NULL,
 };
 
 #endif

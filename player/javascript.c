@@ -1393,4 +1393,5 @@ const struct mp_scripting mp_scripting_js = {
     .name = "javascript",
     .file_ext = "js",
     .load = s_load_javascript,
+    .add_user_builtin = NULL,
 };
